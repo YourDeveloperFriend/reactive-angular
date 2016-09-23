@@ -9,10 +9,14 @@ window.View = function View(view) {
   const bindings = getBindings(template);
   return function($placeholder) {
     const dom = template.clone(true);
+    const children = childViews(dom);
     return {
-      inputs$: events(dom),
+      inputs$: events(dom).merge(children.events),
+        return children.reduce(function(bound, child) {
+          return bound.merge(child.outputs(output));
+        }, bound);
       outputs(output) {
-        return bindings(dom, output).startWith(()=> {
+        const bound = bindings(dom, output).startWith(()=> {
           const {nextSibling, parentNode} = $placeholder;
           if(nextSibling) {
             parentNode.insertBefore(dom, nextSibling);
@@ -21,6 +25,9 @@ window.View = function View(view) {
           }
           parentNode.removeChild($placeholder);
         });
+        return children.reduce(function(bound, child) {
+          return bound.merge(child.outputs(output));
+        }, bound);
       },
       destroy() {
         dom.parentNode.removeChild(dom);
