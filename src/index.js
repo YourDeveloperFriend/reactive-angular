@@ -5,7 +5,7 @@ const AppView = `<div>
   <input type="text" [(ngModel)]="name" />
   <ul>
     <li>before</li>
-                                         <!--li *ngFor="let value of values"><span>{{value}}</span> <span>{{name}}</span></li-->
+    <li *ngFor="let value of values"><span>{{value}}</span> <span>{{name}}</span></li>
     <li>after</li>
   </ul>
   <button (click)="boost" [disabled]="disabled" >Click</button>
@@ -23,13 +23,13 @@ const ChildView = `<div>
 
 function AppModel(input$) {
   const name$ = input$.on('name').startWith('Nathan');
-  
+
   const values$ = input$.on('boost')
   .startWith({})
-  .scan((a, b)=> console.log('b', b) || a + 1, -1)
+  .scan((a, b)=> a + 1, -1)
   .scan(function(values, i) {
     return values.concat([i]);
-  }, []).pluck(3);
+  }, []);
   
   const disabled = input$.on('disabled').startWith(true).merge(input$.on('hoo').map(a=> console.log('a', a) || true));
 
