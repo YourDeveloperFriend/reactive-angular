@@ -26,9 +26,9 @@ function AppModel(input$) {
 
   const values$ = input$.on('boost')
   .scan(-1, (a, b)=> a + 1, -1)
-  .scan([], function(values, i) {
+  .scan(['ape', 'boo'], function(values, i) {
     return values.concat([i]);
-  }).toProperty([]);
+  });
   
   const disabled = input$.on('disabled').merge(input$.on('hoo')).toProperty(true);
 
