@@ -1,13 +1,8 @@
 
-const {Observable} = Rx;
-
-Rx.config.longStackSupport = true;
-
 const oParser = new DOMParser();
 function parse(str) {
   return oParser.parseFromString(str, 'text/html').body.children[0];
 }
-
 
 function dig(dom, depth) {
   if(depth.length === 0) {
@@ -18,9 +13,9 @@ function dig(dom, depth) {
 }
 
 function getPreviousAsWell() {
-  return this.scan((previous, values)=> {
+  return this.scan([], (previous, values)=> {
     return [values, previous[0]];
-  }, []);
+  });
 }
 
 function surrounds(str, surrounding) {

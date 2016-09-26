@@ -22,23 +22,22 @@ const ChildView = `<div>
 </div>`;
 
 function AppModel(input$) {
-  const name$ = input$.on('name').startWith('Nathan');
+  const name$ = input$.on('name').toProperty('Nathan');
 
   const values$ = input$.on('boost')
-  .startWith({})
-  .scan((a, b)=> a + 1, -1)
-  .scan(function(values, i) {
+  .scan(-1, (a, b)=> a + 1, -1)
+  .scan([], function(values, i) {
     return values.concat([i]);
-  }, []);
+  }).toProperty([]);
   
-  const disabled = input$.on('disabled').startWith(true).merge(input$.on('hoo').map(a=> console.log('a', a) || true));
+  const disabled = input$.on('disabled').merge(input$.on('hoo')).toProperty(true);
 
   return {
     name: name$,
     disabled: disabled,
-    body: Observable.just('Booya'),
+    body: Bacon.constant('Booya'),
     values: values$,
-    booya: Observable.just('https://cdn.psychologytoday.com/sites/default/files/blogs/38/2008/12/2598-75772.jpg'),
+    booya: Bacon.constant('https://cdn.psychologytoday.com/sites/default/files/blogs/38/2008/12/2598-75772.jpg'),
   };
 }
 

@@ -5,32 +5,31 @@ function View(template, model$) {
     return childrenComponents[0][1];
   } else {
     const childManager = childManagerFactory(childrenComponents, template);
-    const output$ = _(getViewOutput(template, model$)).groupBy('0').mapValues(value=> Observable.merge(value[0][1])).value();
+    const output$ = _(getViewOutput(template, model$)).groupBy('0').mapValues(value=> Bacon.mergeAll(value[0][1])).value();
     const domChanges$ = getDomChanges(template, model$);
     return { 
       output$: mergeOutput(output$, _.map(childrenComponents, '1.output$')),
-      elements$: Observable.just(template),
-      domChanges$: Observable.merge(...domChanges$, ...getDomChangesOfChildren(childManager)),
+      elements$: Bacon.constant(template),
+      domChanges$: Bacon.mergeAll(...domChanges$, ...getDomChangesOfChildren(childManager)),
     };
   }
 }
 
 function mergeOutput(output, outputArray) {
-  return new Proxy({}, {
-    get(target, name) {
-      return Observable.merge([output[name], ..._.map(outputArray, name)].filter(_.identity));
-    },
-  });
+  const keys = _.uniq(_.keys(output).concat(_.flatten(outputArray.map(_.keys))))
+  return _(keys).invert().mapValues((a, key)=> {
+    return Bacon.mergeAll([output[key], ..._.map(outputArray, key)].filter(_.identity));
+  }).value();
 }
 
 function getDomChangesOfChildren(domManager) {
   const locationMap = new Map();
   let domChanges = [];
   for(const [parentNode, children] of domManager) {
-    domChanges = domChanges.concat(children.map(([child, nextSibling])=> {
+    domChanges = domChanges.concat(children.map(([child, nextSibling], i)=> {
       const domChanges$ = child.domChanges$;
-      const elementChanges = getPreviousAsWell.call(child.elements$)
-      .flatMap(([elements, previous])=> {
+      const elementChanges = child.elements$::getPreviousAsWell()
+      .map(([elements, previous])=> {
         if(!_.isArray(elements)) {
           elements = elements ? [elements] : [];
         }
@@ -48,7 +47,8 @@ function getDomChangesOfChildren(domManager) {
         if(previous.length > elements.length) {
           return previous.slice(elements.length).map(element=> ()=> element.parentNode === parentNode && parentNode.removeChild(element));
         }
-      });
+        return [];
+      }).flatMap(Bacon.fromArray);
       return [domChanges$, elementChanges];
     }));
   }
@@ -108,7 +108,7 @@ function getDomChanges(template, model$) {
         return surrounds(match, '{{}}');
       }));
       const reg = keys.map(key=> key.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"));
-      return Observable.combineLatest(keys.map(key=> model$[key].startWith('')), (...values)=> {
+      return Bacon.combineWith(keys.map(key=> model$[key].startWith('')), (...values)=> {
         return function() {
           textNode.textContent = values.reduce((template, value, i)=> {
             return template.replace(new RegExp('{{' + reg[i] + '}}', 'g'), value);
@@ -124,32 +124,16 @@ function getViewOutput(template, model$) {
     const doubleBind = surrounds(attribute.name, '[()]');
     if(doubleBind) {
       if(doubleBind === 'ngmodel') {
-        return [attribute.value, Observable.create(observer=> {
-          const eventName = dom.type === 'checkbox' ? 'change' : 'keyup';
-          const valueAttr = dom.type === 'checkbox' ? 'checked' : 'value';
-          dom.addEventListener(eventName, onEvent);
-          return function dispose() {
-            dom.removeEventListener(eventName, onEvent);
-          };
-          function onEvent(event) {
-            observer.onNext(event.target[valueAttr]);
-          }
-        })];
+        const eventName = dom.type === 'checkbox' ? 'change' : 'keyup';
+        const valueAttr = dom.type === 'checkbox' ? 'checked' : 'value';
+        return [attribute.value, Bacon.fromEvent(dom, eventName).map(e=> e.target[valueAttr])];
       } else {
         throw new Error('Uknown doublebind: ' + doubleBind);
       }
     }
     const surrounded = surrounds(attribute.name, '()');
     if(surrounded) {
-      return [attribute.value, Observable.create(observer=> {
-        dom.addEventListener(surrounded, onEvent);
-        return function dispose() {
-          dom.removeEventListener(surrounded, onEvent);
-        };
-        function onEvent(event) {
-          observer.onNext(event);
-        }
-      })];
+      return [attribute.value, Bacon.fromEvent(dom, surrounded)];
     }
   });
 }

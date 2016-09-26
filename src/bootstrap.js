@@ -1,7 +1,7 @@
 
 function bootstrap($root, Component, props$) {
   const instance = Component(props$);
-  instance.domChanges$.merge(instance.elements$.map(elements=> {
+  const domChanges$ = Bacon.mergeAll(instance.domChanges$, instance.elements$.map(elements=> {
     return function() {
       while($root.firstChild) {
         $root.removeChild($root.firstChild);
@@ -16,13 +16,15 @@ function bootstrap($root, Component, props$) {
         }
       }
     }
-  })).subscribe(function(domChange) {
+  }));
+  domChanges$.onValue(function(domChange) {
     try {
       domChange();
     } catch(e) {
       console.log('error', e, e.stack);
     }
-  }, function(error) {
+  });
+  domChanges$.onError(function(error) {
     console.log('error', error, error.stack);
   });
 }
