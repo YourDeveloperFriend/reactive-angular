@@ -1,16 +1,15 @@
 
-function ngIfDirective(template, model$) {
+function ngIfDirective(template, model$, output$) {
   const attr = template.getAttribute('*ngif');
   template.removeAttribute('*ngif');
-  const view = View(template, model$);
+  const view = View(template, model$, output$);
   return {
-    output$: view.output$,
-    elements$: model$[attr].withLatestFrom(view.elements$).map(([value, elements])=> value ? elements : []),
+    elements$: model$[attr].withLatestFrom(view.elements$).map(([value, elements])=> value ? elements : null),
     domChanges$: view.domChanges$,
   };
 }
 
-function customComponent(template, model$) {
+function customComponent(template, model$, parentOutput$) {
   const input = {};
   const output = {};
   for(const attribute of template.attributes) {
@@ -28,33 +27,26 @@ function customComponent(template, model$) {
   }
   const ComponentClass = template.tagName === 'APP' ? AppComponent: ChildComponent;
   const instance = ComponentClass(input);
+  _.forEach(output, (value, key)=> {
+    instance[key].subscribe(parentOutput$[value]);
+  });
   return {
-    output$: _.omit(instance, 'elements$', 'domChanges$'),
     elements$: instance.elements$,
     domChanges$: instance.domChanges$,
   }
 }
-function ngForDirective(template, model$) {
+function ngForDirective(template, model$, output$) {
   const config = template.getAttribute('*ngfor');
   const [, key, varName] = config.match(/^let (.*) of (.*)$/);
   template.removeAttribute('*ngfor');
-  const views$ = getPreviousAsWell.call(model$[varName])
-  .map(([values, previous])=> {
+  const views$ = model$[varName]
+  .scan((previous, values)=> {
     return values.map((value, i)=> {
-      return previous && previous[i] || View(template.cloneNode(true), _.merge({}, model$, {[key]: model$[varName].pluck(i).startWith(value)}));
+      return previous && previous[i] || View(template, _.merge({}, model$, {[key]: model$[varName].pluck(i).startWith(value)}));
     });
-  });
+  }, []);
   return {
-    output$: createObservableGetter(views$),
     elements$: views$.flatMapLatest(views=> Observable.combineLatest(_.map(views, 'elements$'))),
     domChanges$: views$.flatMapLatest(views=> Observable.merge(_.map(views, 'domChanges$'))),
   };
-}
-
-function createObservableGetter(views$) {
-  return new Proxy(views$, {
-    get(target, name) {
-      return target.flatMapLatest(views=> Observable.merge(_.map(views, 'output$.' + name)));
-    }
-  });
 }

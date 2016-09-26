@@ -1,5 +1,7 @@
 
-const {Observable} = Rx;
+const {Subject, Observable} = Rx;
+window.TTT = [];
+window.BBB = [];
 
 Rx.config.longStackSupport = true;
 

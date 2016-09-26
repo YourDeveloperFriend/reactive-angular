@@ -31,7 +31,7 @@ function AppModel(input$) {
     return values.concat([i]);
   }, []);
   
-  const disabled = input$.on('disabled').startWith(true).merge(input$.on('hoo').map(a=> console.log('a', a) || true));
+  const disabled = input$.on('disabled').startWith(false).merge(input$.on('hoo').map(a=> true));
 
   return {
     name: name$,
