@@ -124,17 +124,9 @@ function getViewOutput(template, model$) {
     const doubleBind = surrounds(attribute.name, '[()]');
     if(doubleBind) {
       if(doubleBind === 'ngmodel') {
-        return [attribute.value, Observable.create(observer=> {
-          const eventName = dom.type === 'checkbox' ? 'change' : 'keyup';
-          const valueAttr = dom.type === 'checkbox' ? 'checked' : 'value';
-          dom.addEventListener(eventName, onEvent);
-          return function dispose() {
-            dom.removeEventListener(eventName, onEvent);
-          };
-          function onEvent(event) {
-            observer.onNext(event.target[valueAttr]);
-          }
-        })];
+        const eventName = dom.type === 'checkbox' ? 'change' : 'keyup';
+        const valueAttr = dom.type === 'checkbox' ? 'checked' : 'value';
+        return [attribute.value, Observable.fromEvent(dom, eventName).map(e=> e.target[valueAttr])];
       } else {
         throw new Error('Uknown doublebind: ' + doubleBind);
       }
