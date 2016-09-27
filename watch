@@ -1,0 +1,3 @@
+#!/bin/bash
+
+simul "babel src --watch --stage=0 --out-dir js" "anywhere"

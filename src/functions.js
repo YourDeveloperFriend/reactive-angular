@@ -7,8 +7,25 @@ Rx.config.longStackSupport = true;
 
 const oParser = new DOMParser();
 function parse(str) {
-  return oParser.parseFromString(str, 'text/html').body.children[0];
+  return parseDOM(oParser.parseFromString(str, 'text/html').body.children);
 }
+
+function parseDOM(children) {
+  return _.map(children, child=> {
+    if(child.nodeType === 3) {
+      return child.textContent;
+    } else if(child.nodeType === 8) {
+      return false;
+    } else {
+      return {
+        name: child.tagName,
+        attributes: _.merge(..._.map(child.attributes, attribute=> ({[attribute.name]: attribute.value}))),
+        children: parseDOM(child.childNodes),
+      };
+    }
+  }).filter(_.identity);
+}
+
 
 
 function dig(dom, depth) {
@@ -34,19 +51,18 @@ function surrounds(str, surrounding) {
 }
 
 function forEachAttribute(template, attributeFn, textNodeFn = _.constant([]), depth = []) {
-  return forEachChild(template, (dom, depth)=> _.map(dom.attributes, attr=> attributeFn(attr, dom, depth)), textNodeFn, depth);
+  return forEachChild(template, (dom, depth)=> _.map(dom.attributes, (value, attr)=> attributeFn(value, attr, dom, depth)), textNodeFn, depth);
 }
 
 function forEachChild(template, childFn, textNodeFn = _.constant([]), depth = []) {
   let result = childFn(template, depth) || [];
   
-  for(let [i, childNode] of template.childNodes.entries()) {
-    if(childNode.nodeType === 3) {
-      result = result.concat(textNodeFn(childNode));
-    } else if(childNode.nodeType !== 8) {
-      result = result.concat(forEachChild(childNode, childFn, textNodeFn, depth.concat([i])));
+  return _.reduce(template.children, (child, i)=> {
+    if(_.isString(child)) {
+      return result.concat(textNodeFn(child));
+    } else {
+      return result.concat(forEachChild(child, childFn, textNodeFn, depth.concat([i])));
     }
-  }
-  return result.filter(_.identity);
+  }, result).filter(_.identity);
 }
 

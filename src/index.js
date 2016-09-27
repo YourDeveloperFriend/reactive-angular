@@ -5,13 +5,13 @@ const AppView = `<div>
   <input type="text" [(ngModel)]="name" />
   <ul>
     <li>before</li>
-    <li *ngFor="let value of values"><span>{{value}}</span> <span>{{name}}</span></li>
+    <!--li *ngFor="let value of values trackBy value"><span>{{value}}</span> <span>{{name}}</span></li-->
     <li>after</li>
   </ul>
   <button (click)="boost" [disabled]="disabled" >Click</button>
   <input type="checkbox" [(ngModel)]="disabled" /> Disabled
-  <div *ngIf="disabled">Hidden!</div>
-  <Child title="What!" [inside]="name" (custom)="hoo" />
+  <!--div *ngIf="disabled">Hidden!</div-->
+  <!--Child title="What!" [inside]="name" (custom)="hoo" /-->
 </div>`;
 
 

@@ -12,19 +12,19 @@ function ngIfDirective(template, model$, output$) {
 function customComponent(template, model$, parentOutput$) {
   const input = {};
   const output = {};
-  for(const attribute of template.attributes) {
-    const eventName = surrounds(attribute.name, '()');
+  _.forEach(template.attributes, (value, name)=> {
+    const eventName = surrounds(name, '()');
     if(eventName) {
-      output[eventName] = attribute.value;
-      continue;
+      output[eventName] = value;
+    } else {
+      const inputName = surrounds(name, '[]');
+      if(inputName) {
+        input[inputName] = model$[value];
+      } else {
+        input[name] = Observable.just(value);
+      }
     }
-    const inputName = surrounds(attribute.name, '[]');
-    if(inputName) {
-      input[inputName] = model$[attribute.value];
-      continue;
-    }
-    input[attribute.name] = Observable.just(attribute.value);
-  }
+  });
   const ComponentClass = template.tagName === 'APP' ? AppComponent: ChildComponent;
   const instance = ComponentClass(input);
   _.forEach(output, (value, key)=> {
@@ -36,9 +36,9 @@ function customComponent(template, model$, parentOutput$) {
   }
 }
 function ngForDirective(template, model$, output$) {
-  const config = template.getAttribute('*ngfor');
+  const config = template.attributes['*ngfor'];
   const [, key, varName] = config.match(/^let (.*) of (.*)$/);
-  template.removeAttribute('*ngfor');
+  delete template.attributes['*ngfor'];
   const views$ = model$[varName]
   .scan((previous, values)=> {
     return values.map((value, i)=> {

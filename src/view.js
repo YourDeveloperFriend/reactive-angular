@@ -9,56 +9,23 @@ function ComponentView(template) {
       return output$[name];
     },
     bind(model$) {
-      return View(template, model$, output$);
+      const views = template.map(template=> {
+        return View(template, model$, output$);
+      });
+      //TODO: all
+      return views[0];
     },
   };
 }
 
 function View(template, model$, parentOutput$) {
-  const childrenComponents = getChildren(template, model$, parentOutput$);
-  if(childrenComponents.length === 1 && childrenComponents[0][0].length === 0) {
-    return childrenComponents[0][1];
-  } else {
-    const childManager = childManagerFactory(childrenComponents, template);
-    bindViewOutput(template, parentOutput$);
-    const domChanges$ = getDomChanges(template, model$);
-    return { 
-      elements$: Observable.just(template),
-      domChanges$: Observable.merge(...domChanges$, ...getDomChangesOfChildren(childManager)),
-    };
-  }
-}
+  template = mapChildren(template, model$, parentOutput$);
 
-function getDomChangesOfChildren(domManager) {
-  const locationMap = new Map();
-  let domChanges = [];
-  for(const [parentNode, children] of domManager) {
-    domChanges = domChanges.concat(children.map(([child, nextSibling])=> {
-      const domChanges$ = child.domChanges$;
-      const elementChanges = child.elements$::getPreviousAsWell()
-      .flatMap(([elements, previous])=> {
-        if(!_.isArray(elements)) {
-          elements = elements ? [elements] : [];
-        }
-        if(!_.isArray(previous)) {
-          previous = previous ? [previous] : [];
-        }
-        locationMap.set(child, elements[0] || locationMap.get(nextSibling) || nextSibling);
-        if(elements.length === previous.length) {
-          // TODO: rearranging?
-          return [];
-        }
-        if(elements.length > previous.length) {
-          return elements.slice(previous.length).map(element=> ()=> insertBefore.call(parentNode, element, locationMap.get(nextSibling) || nextSibling));
-        }
-        if(previous.length > elements.length) {
-          return previous.slice(elements.length).map(element=> ()=> element.parentNode === parentNode && parentNode.removeChild(element));
-        }
-      });
-      return [domChanges$, elementChanges];
-    }));
-  }
-  return _.flatten(domChanges);
+  bindViewOutput(template, parentOutput$);
+  return { 
+    elements$: Observable.just(['one', ()=> buildElement(template)]),
+    domChanges$: getDomChanges(template, model$),
+  };
 }
 
 function insertBefore(element, nextSibling) {
@@ -69,112 +36,232 @@ function insertBefore(element, nextSibling) {
   }
 }
 
-function childManagerFactory(children, template) {
-  const map = new Map();
-  const toRemove = [];
-  for(const [depth, child] of children) {
-    const childNode = dig(template, depth);
-    const parentNode = childNode.parentNode;
-    toRemove.push([parentNode, childNode]);
-    if(!map.has(parentNode)) {
-      map.set(parentNode, []);
-    }
-    let ordered = map.get(childNode.parentNode);
-    ordered.forEach(([sibling, nextSibling], i)=> {
-      if(nextSibling === childNode) {
-        ordered[i][1] = child;
-      }
-    });
-    ordered.push([child, childNode.nextSibling]);
+function buildElement(template, index) {
+  if(_.isString(template)) {
+    return document.createTextNode(template);
   }
-  toRemove.forEach(([parentNode, child])=> parentNode.removeChild(child));
-  return map;
+  const $el = document.createElement(template.name);
+  if(index != null) {
+    $el.setAttribute('data-ng-child-index', index);
+  }
+  _.forEach(template.attributes, (value, key)=> {
+    let surrounding = null;
+    if(surrounding = surrounds(key, '()')) {
+      $el.addEventListener(surrounding, function(event) {
+        this.dispatchEvent(new CustomEvent(template.uuid + '-' + surrounding, event));
+      });
+    } else if(key === '[(ngmodel)]') {
+      const eventName = template.attributes.type === 'checkbox' ? 'change' : 'keyup';
+      const valueAttr = template.attributes.type === 'checkbox' ? 'checked' : 'value';
+      $el.addEventListener(eventName, function(event) {
+        this.dispatchEvent(new CustomEvent(template.uuid + '-ngmodel-' + value, {bubbles: true, detail: event.target[valueAttr]}));
+      });
+    } else if(!surrounds(key, '[]')) {
+      $el.setAttribute(key, value);
+    }
+  });
+  template.children.forEach((child, index)=> !child.domChanges$ && $el.appendChild(buildElement(child, index)));
+  return $el;
 }
 
 function getDomChanges(template, model$) {
-  return forEachAttribute(template, (attribute, dom)=> {
-    const doubleBind = surrounds(attribute.name, '[()]');
+  const domChanges$ = _.map(template.attributes, (value, attribute)=> {
+    const doubleBind = surrounds(attribute, '[()]');
     if(doubleBind) {
-      const attr = dom.type === 'checkbox' ? 'checked' : 'value';
-      return model$[attribute.value].map(value=> ()=> dom[attr] = value);
+      const attr = template.attributes.type === 'checkbox' ? 'checked' : 'value';
+      return model$[value].map(value=> (dom)=> dom[attr] = value);
     }
-    const surrounded = surrounds(attribute.name, '[]');
+    const surrounded = surrounds(attribute, '[]');
     if(surrounded) {
-      return model$[attribute.value].map(value=> ()=> dom[surrounded] = value);
+      return model$[value].map(value=> (dom)=> dom[surrounded] = value);
     }
-    const matches = attribute.value.match(/{{.*?}}/g);
+    const matches = value.match(/{{.*?}}/g);
     if(matches) {
-      //domChanges.push(model$[attribute.value].map(value=> ()=> dom[surrounded] = value));
-    }
-  }, textNode=> {
-    const textTemplate = textNode.textContent;
-    const matches = textTemplate.match(/{{.*?}}/g);
-    if(matches) {
-      const keys = _.uniq(matches.map(match=> {
-        return surrounds(match, '{{}}');
-      }));
-      const reg = keys.map(key=> key.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"));
-      return Observable.combineLatest(keys.map(key=> model$[key].startWith('')), (...values)=> {
-        return function() {
-          if(keys[0] === 'value') {
-            window.TTT.push([template, textNode]);
-          }
-          textNode.textContent = values.reduce((textTemplate, value, i)=> {
-            return textTemplate.replace(new RegExp('{{' + reg[i] + '}}', 'g'), value);
-          }, textTemplate);
-        };
+      return bindText(model$, value, (node, value)=> {
+        node.setAttribute(attribute, value);
       });
     }
+  }).filter(_.identity);
+  const childrenChanges$ = template.children.map((child, i)=> {
+    let changes$ = null;
+    if(child.domChanges$) {
+      const elementChanges$ = child.elements$.map(elements=> {
+        if(!_.isArray(elements[0])) {
+          elements = elements ? [elements] : [];
+        }
+        return function(parent) {
+          let [firstElement, nextChild] = getFirstAndNext(parent, i);
+          let firstToRemove = elements.reduce((prevSibling, [key, element], index)=> {
+            let $el = getKey(firstElement, nextChild, key);
+            if(!$el) {
+              $el = element();
+              $el.setAttribute('data-ng-key', key);
+            }
+            let nextSibling;
+            if(!prevSibling) {
+              $el.setAttribute('data-ng-child-index', i);
+              firstElement.removeAttribute('data-ng-child-index');
+              nextSibling = firstElement || nextChild;
+              firstElement = $el;
+            } else {
+              nextSibling = prevSibling.nextSibling;
+            }
+            if(!$el.parentNode || $el.nextSibling !== nextSibling) {
+              if(nSibling) {
+                parent.insertBefore($el, nextSibling);
+              } else {
+                parent.appendChild($el);
+              }
+            }
+            return $el;
+          }).nextSibling || firstElement;
+          while(firstToRemove !== nextChild) {
+            let temp = firstToRemove.nextSibling;
+            firstToRemove.parentNode.removeChild(firstToRemove);
+            firstToRemove = temp;
+          }
+        };
+      }).flatMap();
+      return child.domChanges$
+      .map(change=> (parent)=> change(getFirstAndNext(parent, i)[0]))
+      .merge(elementChanges$);
+    } else {
+      if(_.isString(child)) {
+        changes$ = bindText(model$, child, (node, value)=> {
+          node.textContent = value;
+        });
+      } else {
+        changes$ = getDomChanges(child, model$);
+      }
+      changes$ = changes$.map(change=> {
+        return function(parent) {
+          let count = 0;
+          return change(getFirstAndNext(parent, i)[0]);
+        };
+      });
+      return changes$;
+    }
   });
+
+  return Observable.merge(...domChanges$, ...childrenChanges$);
+}
+
+function getFirstAndNext(parent, index) {
+  let child = parent.firstChild;
+  let first = null, next = null;
+  let count = 0;
+  for(let child = parent.firstChild; child !== null; child = child.nextSibling) {
+    if(child.nodeType === 3) {
+      if(count === index) {
+        first = child;
+      } if(count === index + 1) {
+        next = child;
+        break;
+      }
+      count++;
+    } else {
+      let childIndex = getChildIndex(child);
+      if(childIndex) {
+        if(childIndex === index) {
+          first = child;
+        } else if(childIndex === index + 1) {
+          next = child;
+          break;
+        }
+        count++;
+      }
+    }
+  }
+  return [first, next];
+}
+
+function getChildIndex(child) {
+  const attr = child.getAttribute('data-ng-child-index');
+  return attr ? parseInt(attr) : null;
+}
+
+function getKey(firstElement, nextSibling, key) {
+  for(let $el = firstElement; $el !== nextSibling; $el = $el.nextSibling) {
+    if($el.getAttribute('data-ng-key').value === key) {
+      return $el;
+    }
+  }
+}
+
+function bindText(model$, template, fn) {
+  const matches = template.match(/{{.*?}}/g);
+  if(matches) {
+    const keys = _.uniq(matches.map(match=> {
+      return surrounds(match, '{{}}');
+    }));
+    const reg = keys.map(key=> key.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"));
+    return Observable.combineLatest(keys.map(key=> model$[key].startWith('')), (...values)=> {
+      return function(node) {
+        const str = values.reduce((template, value, i)=> {
+          return template.replace(new RegExp('{{' + reg[i] + '}}', 'g'), value);
+        }, template);
+        fn(node, str);
+      };
+    });
+  }
+  return Observable.empty();
 }
 
 function getSubjects(template) {
-  const keys = forEachAttribute(template, (attribute, dom)=> {
-    const doubleBind = surrounds(attribute.name, '[()]');
+  const keys = forEachAttribute(template, (value, attribute, dom)=> {
+    const doubleBind = surrounds(attribute, '[()]');
     if(doubleBind) {
       if(doubleBind === 'ngmodel') {
-        return attribute.value;
+        return value;
       } else {
         throw new Error('Uknown doublebind: ' + doubleBind);
       }
     }
-    const surrounded = surrounds(attribute.name, '()');
+    const surrounded = surrounds(attribute, '()');
     if(surrounded) {
-      return attribute.value;
+      return value;
     }
   });
   return _.uniq(keys);
 }
 
 function bindViewOutput(template, output$) {
-  forEachAttribute(template, (attribute, dom)=> {
-    const outputValue = attribute.value;
-    const doubleBind = surrounds(attribute.name, '[()]');
+  _.forEach(template.attributes, (value, attribute)=> {
+    template.uuid = _.uniqueId();
+    const outputValue = value;
+    const doubleBind = surrounds(attribute, '[()]');
     if(doubleBind) {
       if(doubleBind === 'ngmodel') {
-        const eventName = dom.type === 'checkbox' ? 'change' : 'keyup';
-        const valueAttr = dom.type === 'checkbox' ? 'checked' : 'value';
-        Observable.fromEvent(dom, eventName).map(e=> e.target[valueAttr]).subscribe(output$[outputValue]);
+        // TODO:
+        Observable.fromEvent(document, template.uuid + '-ngmodel-' + value).map(e=> e.detail).subscribe(output$[outputValue]);
       } else {
         throw new Error('Uknown doublebind: ' + doubleBind);
       }
     }
-    const surrounded = surrounds(attribute.name, '()');
+    const surrounded = surrounds(attribute, '()');
     if(surrounded) {
-      Observable.fromEvent(dom, surrounded).subscribe(output$[outputValue]);
+      // TODO:
+      Observable.fromEvent(document, template.uuid + '-' + surrounded).subscribe(output$[outputValue]);
     }
   });
+  template.children.forEach(child=> !child.domChanges$ && !_.isString(child) && bindViewOutput(child, output$));
 }
  
 
-function getChildren(template, model$, parentOutput$) {
-  return forEachChild(template, (dom, depth)=> {
-    if(dom.hasAttribute('*ngfor')) {
-      return [[depth, ngForDirective(dom, model$, parentOutput$)]];
-    } else if(dom.hasAttribute('*ngif')) {
-      return [[depth, ngIfDirective(dom, model$, parentOutput$)]];
-    } else if(dom.tagName === 'APP' || dom.tagName === 'CHILD') {
-      return [[depth, customComponent(dom, model$, parentOutput$)]];
-    }
-  });
+function mapChildren(template, model$, parentOutput$) {
+  if(template.attributes['*ngfor']) {
+    return ngForDirective(template, model$, parentOutput$);
+  } else if(template.attributes['*ngif']) {
+    return ngIfDirective(template, model$, parentOutput$);
+  } else if(template.name === 'APP' || template.name === 'CHILD') {
+    return customComponent(template, model$, parentOutput$);
+  } else {
+    return _.set(template, 'children', template.children.map(value=> {
+      if(_.isString(value)) {
+        return value;
+      } else {
+        return mapChildren(value, model$, parentOutput$);
+      }
+    }));
+  }
 }
