@@ -11,7 +11,7 @@ const AppView = `<div>
   <button (click)="boost" [disabled]="disabled" >Click</button>
   <input type="checkbox" [(ngModel)]="disabled" /> Disabled
   <!--div *ngIf="disabled">Hidden!</div-->
-  <!--Child title="What!" [inside]="name" (custom)="hoo" /-->
+  <Child title="What!" [inside]="name" (custom)="hoo" />
 </div>`;
 
 
